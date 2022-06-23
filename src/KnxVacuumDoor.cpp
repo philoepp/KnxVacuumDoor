@@ -1,11 +1,13 @@
 #include <Arduino.h>
 #include <KnxTpUart.h>
+#include <Servo.h>
 #include "KnxVacuumDoor.h"
 
 /* -------------------------------------------------------------------------- 
 * DEFINES
 ---------------------------------------------------------------------------- */
 //#define DEBUG
+#define SERVO_CONTROL_PIN 1
 
 /* -------------------------------------------------------------------------- 
 Objects/variables
@@ -13,12 +15,14 @@ Objects/variables
 // KNX device
 KnxTpUart knx(&Serial, KNX_PA);
 VacuumDoor Door = {0};
+Servo doorServo;
 
 /* -------------------------------------------------------------------------- 
 * STATIC FUNCTION PROTOTYPES
 ---------------------------------------------------------------------------- */
 static void vInitializeKNX(void);
 static void vSendCurrentPositionToKnx(void);
+static void vControlServoDoor(void);
 
 /* -------------------------------------------------------------------------- 
 * FUNCTIONS
@@ -29,12 +33,15 @@ void setup(void)
   Serial.begin(9600);
 #endif
   vInitializeKNX();
+
+  doorServo.attach(SERVO_CONTROL_PIN);
 }
 
 void loop(void)
 { 
   // Send calculated/measured values to the KNX bus
   vSendCurrentPositionToKnx();
+  vControlServoDoor();
 }
 
 /* -------------------------------------------------------------------------- 
@@ -45,7 +52,7 @@ static void vSendCurrentPositionToKnx(void)
   static uint32_t u32LastTime = millis();
   static bool fLastSendState = false;
 
-  // Check if an update of the relay state is needed
+  // Check if an update of the door position state is needed
   if(fLastSendState != Door.CurrentPosition)
   {
     fLastSendState = Door.CurrentPosition;
@@ -59,6 +66,31 @@ static void vSendCurrentPositionToKnx(void)
     knx.groupWriteBool(KNX_GA_DOOR_POSITION, Door.CurrentPosition);
   }
 }
+
+static void vControlServoDoor(void)
+{
+  static uint32_t u32LastTime = millis();
+
+  // Additional cyclic send of current position
+  if((millis() - u32LastTime) > SERVO_CHANGE_INTERVAL)
+  {
+    u32LastTime = millis();
+
+    if(Door.Setpoint == DoorOpened)
+    {
+      doorServo.write(SERVO_POSITION_OPEN);
+      // Just set the current position to the wanted position (maybe add a delay?)
+      Door.CurrentPosition = DoorOpened;
+    }
+    else // DoorClosed
+    {
+      doorServo.write(SERVO_POSITION_CLOSE);
+      // Just set the current position to the wanted position (maybe add a delay?)
+      Door.CurrentPosition = DoorClosed;
+    }
+  }
+}
+
 
 static void vInitializeKNX(void) 
 {
